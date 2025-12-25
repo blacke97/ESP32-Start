@@ -1,0 +1,306 @@
+学习嵌入式开发，**从简单、可运行的小项目入手**是最高效的方式。ESP32 功能强大，但初学时建议**分模块、分外设逐一实践**，逐步建立对 GPIO、ADC、PWM、I²C、SPI、UART 等核心功能的理解。
+
+下面为你设计一套 **由浅入深的 7 个入门级小项目**，每个项目聚焦一个核心功能，附带代码框架（基于 Arduino Core，因为上手快），并说明**关键知识点**和**接线方法**。你只需一块 **ESP32 开发板（如 ESP32-DevKitC 或 NodeMCU-32S）** 和一些基础电子元件（LED、电阻、电位器、传感器等）。
+
+---
+
+## 🧪 准备工作
+
+### 硬件清单（总价约 30–50 元）：
+- ESP32 开发板（带 USB 转串口）
+- 面包板 + 杜邦线
+- LED × 2
+- 220Ω 电阻 × 2
+- 10kΩ 电位器（可调电阻）× 1
+- 按键（轻触开关）× 1
+- 10kΩ 下拉电阻 × 1（用于按键）
+- DS18B20 防水温度传感器（或 DHT11）
+- I²C OLED 屏幕（128×64，SSD1306）
+- 可选：蜂鸣器、光敏电阻
+
+### 软件环境：
+- 安装 [Arduino IDE](https://www.arduino.cc/en/software)
+- 添加 ESP32 支持：**文件 > 首选项 > 附加开发板管理器网址** 输入：
+  ```
+  https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+  ```
+- 在 **工具 > 开发板 > 开发板管理器** 中搜索 `ESP32` 并安装
+
+---
+
+## 🔧 项目 1：点亮 LED —— **GPIO 输出（数字信号）**
+
+### 目标：
+学会定义 GPIO 为输出，并控制高低电平。
+
+### 接线：
+- LED 长脚 → GPIO 2（板载 LED 通常是 GPIO 2）
+- LED 短脚 → 220Ω 电阻 → GND
+
+### 代码：
+```cpp
+#define LED_PIN 2
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);  // 设置 GPIO 为输出模式
+}
+
+void loop() {
+  digitalWrite(LED_PIN, HIGH); // 输出高电平（3.3V），点亮 LED
+  delay(500);
+  digitalWrite(LED_PIN, LOW);  // 输出低电平（0V），熄灭 LED
+  delay(500);
+}
+```
+
+✅ **知识点**：
+- `pinMode(pin, MODE)`：设置引脚模式（`INPUT`, `OUTPUT`, `INPUT_PULLUP`）
+- `digitalWrite(pin, VALUE)`：输出数字信号（`HIGH` = 3.3V, `LOW` = 0V）
+
+---
+
+## 🔘 项目 2：读取按键 —— **GPIO 输入（数字信号）**
+
+### 目标：
+读取外部开关状态（高/低电平）。
+
+### 接线：
+- 按键一端 → 3.3V
+- 按键另一端 → GPIO 4 + 10kΩ 电阻 → GND（下拉）
+
+### 代码：
+```cpp
+#define BUTTON_PIN 4
+
+void setup() {
+  pinMode(BUTTON_PIN, INPUT); // 设置为输入
+  Serial.begin(115200);
+}
+
+void loop() {
+  int state = digitalRead(BUTTON_PIN); // 读取数字输入
+  Serial.println(state ? "Pressed" : "Released");
+  delay(100);
+}
+```
+
+✅ **知识点**：
+- `digitalRead(pin)`：读取引脚电平（0 或 1）
+- 按键需加 **上拉/下拉电阻** 防止浮空（也可用 `INPUT_PULLUP` 内部上拉）
+
+---
+
+## 📏 项目 3：读取电位器 —— **模拟输入（ADC）**
+
+### 目标：
+使用 ADC 读取模拟电压（0~3.3V → 0~4095）。
+
+### 接线：
+- 电位器：中间脚 → GPIO 34（ESP32 的 ADC1_CH6）
+- 两边脚接 3.3V 和 GND
+
+> ⚠️ 注意：ESP32 的 **GPIO 34–39 仅能作为输入**，且属于 ADC1，不能用作输出！
+
+### 代码：
+```cpp
+#define POT_PIN 34
+
+void setup() {
+  Serial.begin(115200);
+}
+
+void loop() {
+  int value = analogRead(POT_PIN); // 读取 12 位 ADC（0~4095）
+  float voltage = value * (3.3 / 4095.0);
+  Serial.printf("ADC: %d, Voltage: %.2f V\n", value, voltage);
+  delay(200);
+}
+```
+
+✅ **知识点**：
+- `analogRead(pin)`：读取模拟值（ESP32 默认 12 位，范围 0~4095）
+- 可用 `analogReadResolution(10)` 改为 10 位（0~1023）
+
+---
+
+## 🎶 项目 4：控制 LED 亮度 —— **模拟输出（PWM）**
+
+### 目标：
+用 PWM 模拟“模拟输出”，控制 LED 亮度。
+
+### 接线：
+- LED → GPIO 5 → 220Ω → GND
+
+### 代码：
+```cpp
+#define LED_PWM_PIN 5
+#define PWM_CHANNEL 0
+#define PWM_FREQ 5000
+#define PWM_RESOLUTION 8 // 8 位 = 0~255
+
+void setup() {
+  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(LED_PWM_PIN, PWM_CHANNEL);
+}
+
+void loop() {
+  for (int duty = 0; duty <= 255; duty++) {
+    ledcWrite(PWM_CHANNEL, duty); // 设置占空比
+    delay(10);
+  }
+  for (int duty = 255; duty >= 0; duty--) {
+    ledcWrite(PWM_CHANNEL, duty);
+    delay(10);
+  }
+}
+```
+
+✅ **知识点**：
+- ESP32 **没有真正的 DAC（除 GPIO 25/26）**，用 **LEDC PWM** 模拟
+- `ledcSetup(channel, freq, resolution)`
+- `ledcWrite(channel, duty)`
+
+---
+
+## 🌡️ 项目 5：读取 DS18B20 温度 —— **单总线（OneWire）**
+
+### 目标：
+使用单总线协议读取数字温度传感器。
+
+### 接线：
+- DS18B20：VCC → 3.3V，GND → GND，DATA → GPIO 13 + 4.7kΩ 上拉电阻 → VCC
+
+### 代码（需安装库）：
+- 在 **工具 > 管理库** 中搜索安装：
+  - `OneWire` by Paul Stoffregen
+  - `DallasTemperature` by Miles Burton
+
+```cpp
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+#define ONE_WIRE_BUS 13
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+void setup() {
+  Serial.begin(115200);
+  sensors.begin();
+}
+
+void loop() {
+  sensors.requestTemperatures();
+  float temp = sensors.getTempCByIndex(0);
+  Serial.printf("Temperature: %.2f °C\n", temp);
+  delay(1000);
+}
+```
+
+✅ **知识点**：
+- 单总线：**一根数据线**实现通信（需上拉电阻）
+- 多个 DS18B20 可挂同一总线（靠 ROM ID 区分）
+
+---
+
+## 🖥️ 项目 6：驱动 OLED 屏幕 —— **I²C 总线**
+
+### 目标：
+通过 I²C 总线驱动 SSD1306 OLED 显示文字/图形。
+
+### 接线：
+- OLED: SDA → GPIO 21, SCL → GPIO 22, VCC → 3.3V, GND → GND
+
+### 代码（安装库）：
+- 安装 `Adafruit SSD1306` 和 `Adafruit GFX Library`
+
+```cpp
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define OLED_RESET -1
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+void setup() {
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    for (;;); // I²C 地址 0x3C（常见）
+  }
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Hello ESP32!");
+  display.display();
+}
+
+void loop() {}
+```
+
+✅ **知识点**：
+- I²C：**SDA（数据）+ SCL（时钟）**，支持多设备（靠地址区分）
+- ESP32 默认 I²C 引脚：**GPIO 21 (SDA), GPIO 22 (SCL)**，但可通过 `Wire.begin(sda, scl)` 重定义
+
+---
+
+## 📡 项目 7：串口通信（UART）—— 与电脑/其他设备对话
+
+### 目标：
+通过串口发送/接收数据（调试必备！）
+
+### 代码：
+```cpp
+void setup() {
+  Serial.begin(115200); // 初始化主 UART（USB 转串口）
+  Serial2.begin(9600, SERIAL_8N1, 16, 17); // 可选：使用第二 UART（GPIO 16=RX, 17=TX）
+}
+
+void loop() {
+  Serial.println("Hello from ESP32!");
+  
+  // 如果串口收到数据，回显
+  if (Serial.available()) {
+    String msg = Serial.readString();
+    Serial.print("You said: ");
+    Serial.println(msg);
+  }
+  
+  delay(1000);
+}
+```
+
+✅ **知识点**：
+- `Serial` = USB 串口（GPIO 1=TX, GPIO 3=RX）
+- `Serial1`, `Serial2` = 硬件 UART2（ESP32 有 3 个 UART）
+- 用于调试、与 GPS、蓝牙模块通信等
+
+---
+
+## 🧠 学习路线建议
+
+1. **先完成项目 1–3**：掌握 GPIO 基础（数字输入/输出、ADC）
+2. **再做项目 4**：理解 PWM 模拟输出
+3. **接着项目 5–6**：学习总线协议（OneWire, I²C）
+4. **最后项目 7**：掌握通信调试
+5. **之后可挑战**：
+   - 连接 Wi-Fi（`WiFi.begin()`）
+   - 发送 HTTP 请求
+   - 使用 MQTT
+   - 驱动 SPI 设备（如 SD 卡、TFT 屏）
+
+---
+
+## 📚 推荐资源
+
+- 官方文档：[ESP32 Arduino Core GitHub](https://github.com/espressif/arduino-esp32)
+- 图文教程：[Random Nerd Tutorials - ESP32](https://randomnerdtutorials.com/)
+- 书籍：《ESP32 for Arduino 项目实战》（中文）
+
+---
+
+> 💡 **提示**：每个小项目成功运行后，**尝试修改参数、换引脚、加功能**（如按键控制 LED 亮度），这是加深理解的关键！
+
+如果你完成这些，你将对 ESP32 的核心外设有扎实掌握。
